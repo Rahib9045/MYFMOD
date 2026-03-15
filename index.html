@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Recruitment Lab | Presentation Demo</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #6366f1;
+            --secondary: #a855f7;
+            --bg: #0f172a;
+            --card: rgba(255, 255, 255, 0.05);
+            --border: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 40px 20px;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 900px;
+            width: 100%;
+            background: var(--card);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 40px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            background: linear-gradient(to right, #818cf8, #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: #94a3b8;
+            margin-bottom: 40px;
+        }
+
+        .input-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .full-width {
+            grid-column: span 2;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #cbd5e1;
+            font-size: 0.9rem;
+        }
+
+        textarea {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 15px;
+            color: white;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 120px;
+            box-sizing: border-box;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        button {
+            width: 100%;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            color: white;
+            border: none;
+            padding: 16px;
+            border-radius: 12px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+            margin-top: 20px;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            opacity: 0.9;
+        }
+
+        #result {
+            margin-top: 40px;
+            padding: 30px;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.03);
+            text-align: center;
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 99px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 20px;
+        }
+
+        .badge-select {
+            background: #059669;
+            color: #ecfdf5;
+        }
+
+        .badge-reject {
+            background: #dc2626;
+            color: #fef2f2;
+        }
+
+        .prob-container {
+            margin: 20px 0;
+            background: rgba(255, 255, 255, 0.1);
+            height: 12px;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .prob-bar {
+            height: 100%;
+            background: linear-gradient(to right, var(--primary), var(--secondary));
+            width: 0%;
+            transition: width 1s ease-in-out;
+        }
+
+        .prob-text {
+            font-size: 2rem;
+            font-weight: 600;
+        }
+
+        footer {
+            margin-top: 40px;
+            color: #475569;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>AI Recruitment Lab</h1>
+        <p class="subtitle">Neural Network Based Applicant Evaluation System</p>
+
+        <div class="input-group">
+            <div class="full-width" style="margin-bottom: 20px;">
+                <label>Quick Tools</label>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <input type="file" id="pdf_upload" accept=".pdf" style="display: none;"
+                        onchange="handleFileUpload()">
+                    <button type="button" onclick="analyze()"
+                        style="margin:0; width: auto; padding: 10px 20px; font-size: 0.85rem; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--primary);">
+                        ⚡ Analyze Candidate
+                    </button>
+                    <button type="button" onclick="randomizeCase()"
+                        style="margin:0; width: auto; padding: 10px 20px; font-size: 0.85rem; background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981;">
+                        🎲 Randomize All
+                    </button>
+                    <button type="button" onclick="document.getElementById('pdf_upload').click()"
+                        style="margin:0; width: auto; padding: 10px 20px; font-size: 0.85rem; background: rgba(255,255,255,0.05); border: 1px solid var(--border);">
+                        📂 Upload PDF
+                    </button>
+                </div>
+                <span id="file_status"
+                    style="color: #94a3b8; font-size: 0.8rem; display: block; margin-top: 10px;">Ready for
+                    analysis</span>
+            </div>
+            <div class="full-width">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                    <label>Applicant & Interview Profile</label>
+                    <button type="button" onclick="randomizeApplicant()"
+                        style="margin:0 0 5px 0; width: auto; padding: 5px 12px; font-size: 0.75rem; background: rgba(59, 130, 246, 0.1); border: 1px solid #3b82f6; border-radius: 6px;">
+                        🎲 Random Applicant
+                    </button>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <textarea id="resume" placeholder="Paste resume text or upload PDF..."
+                        style="height: 150px;"></textarea>
+                    <textarea id="transcript" placeholder="Paste interview dialogue..."
+                        style="height: 150px;"></textarea>
+                </div>
+            </div>
+            <div class="full-width">
+                <div style="display: flex; justify-content: space-between; align-items: flex-end;">
+                    <label>Job Description</label>
+                    <button type="button" onclick="randomizeJob()"
+                        style="margin:0 0 5px 0; width: auto; padding: 5px 12px; font-size: 0.75rem; background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b; border-radius: 6px;">
+                        🎲 Random Job
+                    </button>
+                </div>
+                <textarea id="job_desc" placeholder="Role requirements..."></textarea>
+            </div>
+        </div>
+
+        <button onclick="analyze()">⚡ Analyze Candidate</button>
+
+        <div id="result">
+            <div id="badge" class="badge">Decision</div>
+            <div class="prob-text"><span id="prob-num">0</span>%</div>
+            <p id="message" style="color: #94a3b8;"></p>
+            <div class="prob-container">
+                <div id="prob-bar" class="prob-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <footer>Produced for AI School Project | Neural Network System</footer>
+
+    <script>
+        // Loaded from verified_templates.json at startup
+        let candidates = [];
+        let jobs = [];
+
+        // Load verified templates from dataset (real full-length text)
+        fetch('verified_templates.json')
+            .then(r => r.json())
+            .then(data => {
+                candidates = data.candidates;
+                // Build job list from verified candidates (these JDs are from training data)
+                jobs = data.candidates.map(c => ({
+                    title: c.role,
+                    desc: data.candidates.find(x => x.role === c.role)?.job_desc || c.role + ' position open.'
+                }));
+                // Also load the jobs array if it exists
+                if (data.jobs) jobs = data.jobs;
+                document.getElementById('file_status').innerText = `✅ ${candidates.length} verified candidates loaded.`;
+            })
+            .catch(() => {
+                document.getElementById('file_status').innerText = '⚠️ Could not load templates. Manual input only.';
+            });
+
+        function randomizeCase() {
+            if (!candidates.length) return alert('Templates still loading...');
+            randomizeApplicant();
+            randomizeJob();
+            document.getElementById('file_status').innerText = "Scenario: FULL RANDOMIZATION";
+        }
+
+        function randomizeApplicant() {
+            if (!candidates.length) return;
+            const cand = candidates[Math.floor(Math.random() * candidates.length)];
+            document.getElementById('resume').value = cand.resume;
+            document.getElementById('transcript').value = cand.transcript;
+            document.getElementById('file_status').innerText = `Applicant: ${cand.name} (${cand.role})`;
+            document.getElementById('result').style.display = 'none';
+        }
+
+        function randomizeJob() {
+            if (!jobs.length) return;
+            const job = jobs[Math.floor(Math.random() * jobs.length)];
+            document.getElementById('job_desc').value = job.desc;
+            const status = document.getElementById('file_status').innerText;
+            if (!status.includes("Applicant:")) {
+                document.getElementById('file_status').innerText = `Job: ${job.title}`;
+            }
+            document.getElementById('result').style.display = 'none';
+        }
+
+        function loadSample(type) {
+            // Deprecated, use randomize functions
+        }
+
+        async function handleFileUpload() {
+            const fileInput = document.getElementById('pdf_upload');
+            const status = document.getElementById('file_status');
+            const resumeArea = document.getElementById('resume');
+
+            if (!fileInput.files.length) return;
+
+            const file = fileInput.files[0];
+            status.innerText = "Reading: " + file.name + "...";
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/upload_pdf', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (data.text) {
+                    resumeArea.value = data.text;
+                    status.innerText = "✅ " + file.name + " uploaded and parsed!";
+                } else {
+                    alert(data.error || "Error parsing PDF");
+                }
+            } catch (error) {
+                alert("Error: Is the Flask server running?");
+            }
+        }
+
+        async function analyze() {
+            const resultDiv = document.getElementById('result');
+            const btn = document.querySelector('button');
+
+            // Show loading state
+            btn.innerText = "🧠 AI is Thinking...";
+            btn.disabled = true;
+
+            const data = {
+                resume: document.getElementById('resume').value,
+                transcript: document.getElementById('transcript').value,
+                job_description: document.getElementById('job_desc').value
+            };
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+
+                // Update UI
+                resultDiv.style.display = 'block';
+                document.getElementById('prob-num').innerText = result.probability;
+                document.getElementById('prob-bar').style.width = result.probability + "%";
+                document.getElementById('message').innerText = result.message;
+
+                const badge = document.getElementById('badge');
+                badge.innerText = result.decision;
+                badge.className = 'badge ' + (result.decision === 'SELECT' ? 'badge-select' : 'badge-reject');
+
+            } catch (error) {
+                alert("Error: Is the Flask server running?");
+            } finally {
+                btn.innerText = "⚡ Analyze Candidate";
+                btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+
+</html>

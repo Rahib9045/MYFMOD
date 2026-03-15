@@ -1,0 +1,12 @@
+[
+    {
+        "id": "job_001",
+        "title": "Machine Learning Engineer",
+        "description": "We are looking for a Machine Learning Engineer to build and optimize models using PyTorch and Scikit-learn. Proficiency in Python and data processing is required."
+    },
+    {
+        "id": "job_002",
+        "title": "Full Stack Developer",
+        "description": "Seeking a Full Stack Developer experienced in React and Node.js. Must be comfortable with frontend and backend development."
+    }
+]
