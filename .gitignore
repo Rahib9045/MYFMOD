@@ -1,21 +1,11 @@
-# Datasets
-*.csv
-*.zip
-archive/
-
-# Model weights
-# recruitment_model.pth (kept for demo, but listed here as a reminder)
-
-# Python
-__pycache__/
-*.pyc
-
-# Logs/Temp
-output.txt
-file_status.txt
-*.log
-
-# Environment
-.venv/
-env/
 .env
+node_modules/
+.next/
+__pycache__/
+*.pth
+*.csv
+output.txt
+.DS_Store
+dist/
+build/
+.vscode/

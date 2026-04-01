@@ -173,6 +173,24 @@
             font-weight: 600;
         }
 
+        .advice-box {
+            margin-top: 25px;
+            text-align: left;
+            padding: 20px;
+            background: rgba(99, 102, 241, 0.05);
+            border-left: 4px solid var(--primary);
+            border-radius: 8px;
+        }
+
+        .advice-title {
+            font-weight: 600;
+            color: var(--primary);
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
         footer {
             margin-top: 40px;
             color: #475569;
@@ -245,6 +263,10 @@
             <p id="message" style="color: #94a3b8;"></p>
             <div class="prob-container">
                 <div id="prob-bar" class="prob-bar"></div>
+            </div>
+            <div id="advice-section" class="advice-box" style="display: none;">
+                <div class="advice-title">💡 Recruiter's Advice</div>
+                <p id="advice-text" style="margin: 0; line-height: 1.6; color: #cbd5e1;"></p>
             </div>
         </div>
     </div>
@@ -368,6 +390,15 @@
                 const badge = document.getElementById('badge');
                 badge.innerText = result.decision;
                 badge.className = 'badge ' + (result.decision === 'SELECT' ? 'badge-select' : 'badge-reject');
+
+                // Advice Section
+                const adviceSection = document.getElementById('advice-section');
+                if (result.advice) {
+                    adviceSection.style.display = 'block';
+                    document.getElementById('advice-text').innerText = result.advice;
+                } else {
+                    adviceSection.style.display = 'none';
+                }
 
             } catch (error) {
                 alert("Error: Is the Flask server running?");
