@@ -1,0 +1,11 @@
+node_modules/
+.next/
+.env
+__pycache__/
+*.csv
+*.csv
+output.txt
+.DS_Store
+frontend/
+lessons/
+*.md

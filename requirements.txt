@@ -1,0 +1,7 @@
+flask
+flask-cors
+torch
+sentence-transformers
+openai
+python-dotenv
+PyPDF2
