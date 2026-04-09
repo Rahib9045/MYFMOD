@@ -5,3 +5,6 @@ sentence-transformers
 openai
 python-dotenv
 PyPDF2
+pandas
+numpy
+scikit-learn
