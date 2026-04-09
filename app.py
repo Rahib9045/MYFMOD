@@ -170,5 +170,5 @@ def predict():
 
 if __name__ == "__main__":
     print("\n🚀 RECRUITMENT INTELLIGENCE SERVER (v2.2-Meta) RUNNING")
-    print("Backend Endpoint: http://127.0.0.1:5000 | Meta-Architecture Active")
-    app.run(port=5000)
+    print("Backend Endpoint: http://0.0.0.0:5000 | Meta-Architecture Active")
+    app.run(host="0.0.0.0", port=5000)
