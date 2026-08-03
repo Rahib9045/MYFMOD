@@ -6,6 +6,13 @@ services:
       - "5000:5000"
     env_file:
       - .env
+    environment:
+      # Absolute path (four slashes) inside the mounted volume, so registered
+      # accounts and saved portfolios survive `docker compose down`.
+      - DATABASE_URL=sqlite:////app/data/recruitment.db
+      - CORS_ORIGINS=http://localhost:3000
+    volumes:
+      - recruitment-db:/app/data
     restart: unless-stopped
 
   frontend:
@@ -16,5 +23,9 @@ services:
     depends_on:
       - backend
     environment:
+      # Read by the browser, so this is the host-visible address of the API.
       - NEXT_PUBLIC_API_URL=http://localhost:5000
     restart: unless-stopped
+
+volumes:
+  recruitment-db:

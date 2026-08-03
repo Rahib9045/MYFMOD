@@ -2,9 +2,11 @@ flask
 flask-cors
 torch
 sentence-transformers
-openai
+groq
 python-dotenv
 PyPDF2
 pandas
 numpy
 scikit-learn
+SQLAlchemy
+PyJWT

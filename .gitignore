@@ -1,4 +1,6 @@
 .env
+.env.local
+*.db
 node_modules/
 .next/
 __pycache__/

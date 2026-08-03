@@ -11,18 +11,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all backend files
-COPY app.py .
-COPY preprocess_data.py .
-COPY retrain_v2.py .
-COPY train_model.py .
+# Backend modules (app, db, auth, models, training + utility scripts)
+COPY *.py .
+
+# Model weights and UI template data
 COPY recruitment_model.pth .
 COPY verified_templates.json .
 COPY ui_templates.json .
-COPY index.html .
 
-# Copy any remaining utility scripts
-COPY *.py .
+# Holds the SQLite file; mount a volume here so accounts survive a rebuild
+RUN mkdir -p /app/data
 
 EXPOSE 5000
 
