@@ -15,6 +15,10 @@ services:
       # accounts and saved portfolios survive `docker compose down`.
       - DATABASE_URL=sqlite:////app/data/recruitment.db
       - CORS_ORIGINS=http://localhost:3000
+      # The encoder is baked into the image, so never reach out to HuggingFace
+      # at runtime. Set here as well as in the Dockerfile so existing images
+      # get the benefit without a rebuild.
+      - HF_HUB_OFFLINE=1
     volumes:
       - recruitment-db:/app/data
     healthcheck:

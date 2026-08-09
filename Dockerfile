@@ -17,6 +17,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 ENV HF_HOME=/app/hf-cache
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
+# Set AFTER the download above, so the build can still fetch the model while
+# the running container never phones home. Without this, a container with no
+# internet spends ~40s retrying HTTP HEADs before falling back to the cache.
+ENV HF_HUB_OFFLINE=1
+
 # Backend modules (app, db, auth, models, training + utility scripts)
 COPY *.py .
 

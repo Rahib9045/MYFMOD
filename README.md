@@ -292,8 +292,20 @@ entirely. You still need Parts 4–6 (the `.env` file).
 docker compose up --build
 ```
 
+> 🚨 **Check your free disk space first — you need at least 15 GB.** The backend image is ~9 GB
+> (PyTorch is enormous) and the build cache adds another ~11 GB on top before you can clear it. If
+> your drive fills up mid-build, Docker doesn't fail cleanly — the engine wedges and starts
+> returning `500 Internal Server Error` on every command. **If that happens:** free up space,
+> then run `wsl --shutdown` and restart Docker Desktop.
+>
+> If you're short on space, use the normal setup (Parts 1–9) instead. It needs about 3 GB.
+
 The first build takes 10–20 minutes. After that, `docker compose up` starts in seconds. Then open
 http://localhost:3000.
+
+To reclaim space afterwards: `docker builder prune -af` clears the build cache (safe — it's
+regenerable). On Windows that frees space *inside* the virtual disk but doesn't return it to
+Windows until you compact it, which needs Docker and WSL fully shut down first.
 
 Notes:
 - The AI language model is **baked into the image at build time**, so containers start instantly
