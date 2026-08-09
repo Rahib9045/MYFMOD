@@ -1,3 +1,13 @@
+# Secrets — `.env` alone missed .env.local, which was landing in the image
+.env
+.env.*
+
 node_modules/
 .next/
-.env
+out/
+
+.git/
+.gitignore
+.DS_Store
+*.tsbuildinfo
+npm-debug.log*

@@ -4,16 +4,18 @@ An HR screening tool that matches candidate resumes and interview transcripts ag
 descriptions. Users sign in, save candidate portfolios, and keep a permanent history of every
 evaluation the system produces.
 
+> **Setting this up for the first time?** Go straight to
+> [**Setup From Scratch**](#-setup-from-scratch) below. It assumes you have never run a project
+> like this before and explains every step, including what to install and what each command does.
+
 ---
 
 ## 📋 Table of Contents
 
-- [Architecture](#-architecture)
-- [Prerequisites](#-prerequisites)
-- [Step 1: Get a Groq API Key](#step-1-get-a-groq-api-key)
-- [Step 2: Create your `.env` file](#step-2-create-your-env-file)
-- [Step 3: Run it](#step-3-run-it)
-- [Step 4: First-run walkthrough](#step-4-first-run-walkthrough)
+- [Setup From Scratch](#-setup-from-scratch) ← **start here**
+- [Running it again later](#-running-it-again-later)
+- [Running with Docker](#-running-with-docker-optional)
+- [Architecture](#️-architecture)
 - [Configuration reference](#️-configuration-reference)
 - [API reference](#-api-reference)
 - [Project structure](#-project-structure)
@@ -21,6 +23,296 @@ evaluation the system produces.
 - [Troubleshooting](#-troubleshooting)
 - [The local model](#-the-local-model)
 - [Educational docs](#-educational-journey-lessons--docs)
+
+---
+
+# 🚀 Setup From Scratch
+
+This walkthrough takes about 20 minutes. You will install two programs, get one free API key,
+create one text file, and run two commands. Do the parts in order and don't skip ahead.
+
+**The app has two halves that both need to be running at the same time:**
+
+- the **backend** (the AI brain — Python)
+- the **frontend** (the website you click on — Node.js)
+
+That's why you'll end up with two terminal windows open. Both must stay open while you use the
+app. Closing one breaks the app until you start it again.
+
+---
+
+## Part 1 — Open a terminal
+
+A "terminal" is the black window where you type commands. You'll use it a lot.
+
+- **Windows:** press `Win + X`, then click **Terminal** (or **Windows PowerShell**).
+- **Mac:** press `Cmd + Space`, type `Terminal`, press Enter.
+- **Linux:** press `Ctrl + Alt + T`.
+
+Keep it open. When this guide says "run" something, it means: type it into the terminal and press
+Enter.
+
+---
+
+## Part 2 — Install Python
+
+Python runs the AI backend.
+
+1. Go to **https://www.python.org/downloads/** and download the latest version.
+2. Run the installer.
+3. 🚨 **On Windows, tick the box that says "Add python.exe to PATH" on the very first screen.**
+   It is easy to miss and it is at the bottom. If you skip it, your terminal will not be able to
+   find Python and nothing in this guide will work.
+4. Click through the rest of the installer.
+5. **Close your terminal and open a new one** (it only notices new programs when it restarts).
+6. Check it worked:
+
+   ```bash
+   python --version
+   ```
+
+   You should see something like `Python 3.12.2`. **It must be 3.11 or higher.**
+
+   > If you get "command not found" or "not recognized", Python isn't on your PATH. On Windows,
+   > re-run the installer, choose **Modify**, and make sure the PATH box is ticked. On Mac, try
+   > `python3 --version` instead — and use `python3` everywhere this guide says `python`.
+
+---
+
+## Part 3 — Install Node.js
+
+Node.js runs the website half.
+
+1. Go to **https://nodejs.org** and download the **LTS** version (the left-hand button).
+2. Run the installer and click through it. No special boxes to tick.
+3. **Close your terminal and open a new one again.**
+4. Check it worked:
+
+   ```bash
+   node --version
+   ```
+
+   You should see something like `v20.11.0`. **It must be 20.9 or higher.** If it's lower, install
+   the LTS version again — this project will not build on older Node.
+
+---
+
+## Part 4 — Get the project onto your computer
+
+**If you have Git installed:**
+
+```bash
+git clone https://github.com/Rahib9045/MYFMOD.git
+cd MYFMOD
+```
+
+**If you don't:** open the GitHub page in a browser, click the green **Code** button →
+**Download ZIP**, then unzip it somewhere you'll remember (like your Desktop).
+
+Now point your terminal at that folder. Type `cd `, then **drag the project folder from your file
+explorer onto the terminal window** — it fills in the path for you — then press Enter.
+
+```bash
+cd "C:\Users\YourName\Desktop\MYFMOD"     # Windows example
+cd ~/Desktop/MYFMOD                        # Mac/Linux example
+```
+
+Confirm you're in the right place:
+
+```bash
+ls        # Mac/Linux
+dir       # Windows
+```
+
+You should see `app.py`, `requirements.txt`, and a `frontend` folder in the list. If you don't,
+you're in the wrong folder — `cd` again.
+
+---
+
+## Part 5 — Get a free Groq API key
+
+Groq is the AI service that reads the resumes. It's free to sign up.
+
+1. Go to **https://console.groq.com** and create an account.
+2. Click **API Keys** in the sidebar → **Create API Key**.
+3. Give it any name, then copy the key. It starts with `gsk_`.
+4. 🚨 **Paste it into Notepad for a second — the website only shows it once.** If you lose it,
+   just delete that key and make a new one.
+
+> **Get your own key. Don't reuse someone else's** — usage is billed to whoever owns it, and if it
+> leaks it has to be replaced. There is no key stored in this project.
+
+---
+
+## Part 6 — Create the `.env` file
+
+`.env` is a small text file holding your secrets. The project ships with a template called
+`.env.example`. You're going to copy it and fill it in.
+
+Run this in the project folder:
+
+```bash
+# Windows (PowerShell)
+Copy-Item .env.example .env
+
+# Mac/Linux
+cp .env.example .env
+```
+
+Now you need a second secret — a random string used to keep logins secure. Generate one:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+It prints a long jumble of characters. Copy it.
+
+Open the new `.env` file in any text editor (Notepad is fine) and fill in the two blank lines:
+
+```ini
+GROQ_API_KEY=gsk_paste_your_groq_key_here
+JWT_SECRET=paste_the_long_random_jumble_here
+```
+
+Leave every other line exactly as it is. Save and close.
+
+> ⚠️ **Never send this file to anyone or upload it to GitHub.** It's already set up to be ignored
+> by Git, so as long as you don't go out of your way, you're fine.
+
+---
+
+## Part 7 — Start the backend (Terminal 1)
+
+In your terminal, in the project folder, run:
+
+```bash
+pip install -r requirements.txt
+```
+
+This downloads everything Python needs. **It takes 5–15 minutes and downloads about 2 GB** — one
+of the pieces (PyTorch) is genuinely enormous. Lots of text will scroll past. That's normal. Go
+make a coffee.
+
+When it finishes, start the server:
+
+```bash
+python app.py
+```
+
+The first time only, it downloads the AI language model (~90 MB), so give it a minute. You're
+looking for these lines:
+
+```
+✨ v2 Model loaded | Threshold = 0.2
+🤖 Groq engine: ENABLED (llama-3.3-70b-versatile)
+🚀 RECRUITMENT INTELLIGENCE SERVER RUNNING
+```
+
+✅ **`Groq engine: ENABLED` is the line that matters.** If it says `DISABLED`, your `GROQ_API_KEY`
+didn't get read — go back to Part 6 and check the `.env` file is in the project folder, is named
+exactly `.env`, and has your key on the `GROQ_API_KEY=` line with no spaces or quotes.
+
+**Leave this terminal open and running.** It looks like it's frozen. It isn't — that's the server
+waiting for work. Don't press Ctrl+C.
+
+---
+
+## Part 8 — Start the frontend (Terminal 2)
+
+Open a **brand new terminal window**. Don't reuse the first one.
+
+Navigate to the project folder again, then into the `frontend` folder:
+
+```bash
+cd "C:\Users\YourName\Desktop\MYFMOD\frontend"    # your path here
+```
+
+Install and run:
+
+```bash
+npm install
+npm run dev
+```
+
+`npm install` takes a few minutes the first time. When `npm run dev` is ready you'll see:
+
+```
+▲ Next.js 16.2.2
+- Local:  http://localhost:3000
+✓ Ready
+```
+
+**Leave this terminal open too.** You now have two terminals running. That's correct.
+
+---
+
+## Part 9 — Use it
+
+1. Open your browser and go to **http://localhost:3000**
+2. You'll land on the sign-in page. Click **Register now**.
+3. Make an account. Any email works — it isn't verified and no email is sent. **The password must
+   be at least 8 characters.**
+4. You're now on the dashboard. Click **🎲 Randomize Case** to load a sample candidate and job.
+5. Click **Begin Deep Analysis**. After a few seconds you get a SELECT or REJECT verdict, a
+   confidence score, and written advice.
+6. Click **Save Portfolio**, type a name, press Enter. It appears in the **Saved Portfolios** list.
+7. Refresh the page. Everything is still there — it's saved in a real database, not just your
+   browser.
+
+🎉 That's it. It works.
+
+---
+
+## 🔁 Running it again later
+
+You only do the setup once. Every time after that, it's just two terminals:
+
+**Terminal 1** (in the project folder):
+```bash
+python app.py
+```
+
+**Terminal 2** (in the `frontend` folder):
+```bash
+npm run dev
+```
+
+Then open http://localhost:3000. No reinstalling, no re-creating `.env`.
+
+To stop the app, press `Ctrl + C` in each terminal.
+
+---
+
+## 🐳 Running with Docker (optional)
+
+If you already have Docker Desktop installed and running, you can skip Parts 2, 3, 7 and 8
+entirely. You still need Parts 4–6 (the `.env` file).
+
+```bash
+docker compose up --build
+```
+
+The first build takes 10–20 minutes. After that, `docker compose up` starts in seconds. Then open
+http://localhost:3000.
+
+Notes:
+- The AI language model is **baked into the image at build time**, so containers start instantly
+  and work with no internet connection.
+- The database lives in a named volume, so accounts survive `docker compose down`.
+- To stop it: `docker compose down`.
+
+### Production mode
+
+The default stack runs development servers — fine for a demo, not for real deployment. To swap in
+gunicorn and an optimized frontend build:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+```
+
+> Set `NEXT_PUBLIC_API_URL` in `.env` to the address browsers will actually use **before**
+> building for production. It gets compiled into the browser bundle at build time, so changing it
+> later needs a rebuild, not just a restart.
 
 ---
 
@@ -38,135 +330,6 @@ The API tries Groq first. If no `GROQ_API_KEY` is set, or the Groq call fails fo
 falls back to the locally trained model automatically. Every response reports which engine
 produced it in the `engine` field, and that value is stored alongside the result — so you can
 always tell how any given verdict was reached.
-
----
-
-## ✅ Prerequisites
-
-| Requirement | Version | Notes |
-| :--- | :--- | :--- |
-| **Python** | 3.11+ | Needed for the backend |
-| **Node.js** | 20.9+ | Required by Next.js 16 |
-| **Groq API key** | — | Free at [console.groq.com](https://console.groq.com/keys) |
-| **Docker** | optional | Only for the one-command path |
-
-You do **not** need a GPU. The local model runs on CPU.
-
----
-
-## Step 1: Get a Groq API Key
-
-1. Sign up at [console.groq.com](https://console.groq.com).
-2. Go to **API Keys** → **Create API Key**.
-3. Copy the key (it starts with `gsk_`). You only see it once.
-
-> The app still runs without a key — it just falls back to the local MLP model for every
-> evaluation, which is less accurate at spotting role mismatches.
-
----
-
-## Step 2: Create your `.env` file
-
-Copy the template:
-
-```bash
-# macOS / Linux
-cp .env.example .env
-
-# Windows (PowerShell)
-Copy-Item .env.example .env
-```
-
-Open `.env` and fill in two values:
-
-```ini
-GROQ_API_KEY=gsk_your_key_here
-JWT_SECRET=paste_a_generated_secret_here
-```
-
-Generate the `JWT_SECRET` with:
-
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(48))"
-```
-
-> **`JWT_SECRET` signs login tokens.** If you leave it blank the app generates a temporary one at
-> startup and prints a warning — everything works, but every restart logs all users out. Changing
-> this value later also logs everyone out.
-
-**Never commit `.env`.** It is already in `.gitignore`, along with `frontend/.env.local` and
-`*.db`.
-
----
-
-## Step 3: Run it
-
-### Option A — Docker (one command)
-
-```bash
-docker compose up --build
-```
-
-That's it. The database lives in a named volume, so accounts and saved portfolios survive
-`docker compose down`.
-
-### Option B — Run locally (two terminals)
-
-**Terminal 1 — backend:**
-
-```bash
-pip install -r requirements.txt
-python app.py
-```
-
-Wait for this output (the first run downloads the SBERT model, ~90 MB):
-
-```
-✨ v2 Model loaded | Threshold = 0.2
-🤖 Groq engine: ENABLED (llama-3.3-70b-versatile)
-🚀 RECRUITMENT INTELLIGENCE SERVER RUNNING
-```
-
-If it says `Groq engine: DISABLED`, your `GROQ_API_KEY` is missing or wasn't picked up.
-
-**Terminal 2 — frontend:**
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-### Where things run
-
-| Service | URL |
-| :--- | :--- |
-| Frontend | http://localhost:3000 |
-| API | http://localhost:5000 |
-| Health check | http://localhost:5000/health |
-
----
-
-## Step 4: First-run walkthrough
-
-1. Open **http://localhost:3000/register**.
-2. Create an account — any email works; the password must be at least 8 characters. There's no
-   email verification, so you land straight on the dashboard.
-3. Click **🎲 Randomize Case** to load a sample candidate and job from
-   `frontend/public/verified_templates.json`. (Or paste your own text, or click **Upload PDF** to
-   pull a resume out of a PDF.)
-4. Click **Begin Deep Analysis**. You'll get a SELECT/REJECT verdict, a confidence score, and
-   recruiter's advice — and it appears in **Analysis History** automatically.
-5. Click **Save Portfolio**, name it, and press Enter. It shows up in **Saved Portfolios**; click
-   it any time to reload that candidate into the form.
-6. Reload the page or sign out and back in — everything is still there. It's in the database, not
-   the browser.
-
-To confirm the pieces are wired up, `http://localhost:5000/health` should return:
-
-```json
-{"status": "ok", "engine": "groq-llama-3.3-70b-versatile", "threshold": 0.2}
-```
 
 ---
 
@@ -240,9 +403,10 @@ curl -s -X POST http://localhost:5000/predict \
 ├── preprocess_data.py      # Text cleaning used at train and inference time
 ├── retrain_v2.py           # Training script + the RecruitmentBrain model class
 ├── recruitment_model.pth   # Trained weights (threshold baked in)
-├── requirements.txt
+├── requirements.txt        # Python dependencies
 ├── .env.example            # Config template — copy to .env
-├── docker-compose.yml      # Backend + frontend + DB volume
+├── docker-compose.yml      # Backend + frontend + DB volume (dev)
+├── docker-compose.prod.yml # Production overrides (gunicorn, built frontend)
 ├── Dockerfile              # Backend image
 ├── frontend/
 │   ├── src/lib/api.ts      # All API calls + token handling
@@ -251,7 +415,7 @@ curl -s -X POST http://localhost:5000/predict \
 │   ├── src/app/dashboard/  # Main workspace
 │   └── public/verified_templates.json   # Sample candidates for "Randomize Case"
 ├── docs/                   # Lessons, guides, final report
-└── archive/dataset.csv     # Training data (not tracked)
+└── archive/dataset.csv     # Training data (not tracked in git)
 ```
 
 ---
@@ -264,13 +428,14 @@ Three tables, created automatically on first boot (`models.py`):
 - **`portfolios`** — a saved candidate profile (resume, transcript, job description)
 - **`analyses`** — every verdict: score, decision, advice, and which engine produced it
 
-**To reset everything:**
+**To wipe everything and start fresh:**
 
 ```bash
-# Local
-rm recruitment.db          # PowerShell: Remove-Item recruitment.db
+# Local — just delete the database file, it rebuilds itself on next start
+rm recruitment.db                    # Mac/Linux
+Remove-Item recruitment.db           # Windows
 
-# Docker — find the exact name with `docker volume ls | grep recruitment-db`
+# Docker — find the exact name with `docker volume ls`
 docker compose down
 docker volume rm <project>_recruitment-db
 ```
@@ -287,14 +452,21 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost/recruitment
 
 | Symptom | Fix |
 | :--- | :--- |
-| `Groq engine: DISABLED` at startup | `GROQ_API_KEY` missing from `.env`, or you started the server from a different directory. |
-| `⚠️ JWT_SECRET not set` warning | Set `JWT_SECRET` in `.env`, otherwise restarts log everyone out. |
-| "Cannot reach the API" in the browser | The backend isn't running, or isn't on port 5000. Check http://localhost:5000/health. |
+| `python` / `pip` "not recognized" | Python isn't on your PATH. Reinstall it and tick **Add python.exe to PATH**, then open a new terminal. On Mac use `python3` and `pip3`. |
+| `npm` "not recognized" | Node.js isn't installed, or you didn't open a new terminal after installing it. |
+| `Groq engine: DISABLED` at startup | `GROQ_API_KEY` missing from `.env`, the file isn't in the project folder, or you started the server from a different folder. |
+| `⚠️ JWT_SECRET not set` warning | Set `JWT_SECRET` in `.env`. Without it, every restart logs everyone out. |
+| "Cannot reach the API" in the browser | Terminal 1 isn't running. Check http://localhost:5000/health — it should return JSON. |
+| Website won't load at all | Terminal 2 isn't running, or something else is using port 3000. |
+| `Port 5000 is already in use` | Another program has the port (on Mac, AirPlay Receiver is a common culprit — turn it off in System Settings → General → AirDrop & Handoff). |
+| Logged out unexpectedly | Token expired (7 days) or `JWT_SECRET` changed. Just sign in again. |
+| "Session expired" right after signing in | The backend restarted with a temporary `JWT_SECRET`. Set a fixed one in `.env`. |
+| `pip install` fails or seems stuck | It downloads ~2 GB. Give it 15 minutes on a slow connection before assuming it's broken. |
+| Backend slow to start (first time) | It downloads the AI model (~90 MB) once. Later starts take seconds. Docker images have it pre-baked. |
 | CORS errors in the browser console | Add your frontend's origin to `CORS_ORIGINS` in `.env`. |
-| Logged out unexpectedly | Token expired (7 days) or `JWT_SECRET` changed. Sign in again. |
-| "Session expired" right after signing in | The backend restarted with a temporary `JWT_SECRET`. Set a fixed one. |
-| Backend slow to start | First run downloads the SBERT model (~90 MB). Later starts take a few seconds. |
-| `npm run dev` fails | Node.js must be 20.9+. Check with `node --version`. |
+| `docker compose up` fails immediately | `.env` must exist — compose requires it. Do Part 6 first. |
+| Production frontend can't reach the API | `NEXT_PUBLIC_API_URL` is compiled in at build time. Set it in `.env` and **rebuild**. |
+| Docker build can't find a file it should copy | Check `.dockerignore`. Patterns use Go's `filepath.Match`, so `*` does not cross `/` — `*.csv` misses `archive/dataset.csv`, and broad rules like `*.txt` will silently swallow `requirements.txt` unless negated with `!`. |
 
 ---
 

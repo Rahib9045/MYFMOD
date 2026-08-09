@@ -1,3 +1,7 @@
+# Local demo stack: hot-reloading frontend, Flask dev server backend.
+# For production servers, layer the override on top:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+
 services:
   backend:
     build: .
@@ -13,14 +17,29 @@ services:
       - CORS_ORIGINS=http://localhost:3000
     volumes:
       - recruitment-db:/app/data
+    healthcheck:
+      # python:slim has no curl. start_period covers the model load on boot.
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://localhost:5000/health')
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
     restart: unless-stopped
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: dev
     container_name: recruitment-ui
     ports:
       - "3000:3000"
     depends_on:
+      # Not gated on service_healthy: the browser calls the API directly, so
+      # the UI is useful before the model finishes loading.
       - backend
     environment:
       # Read by the browser, so this is the host-visible address of the API.

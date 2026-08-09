@@ -1,11 +1,43 @@
-node_modules/
-.next/
+# NOTE: Docker matches these with Go's filepath.Match, where `*` does NOT cross
+# a `/`. A bare `*.csv` only matches root-level files — nested paths need `**/`.
+
+# Secrets — must never reach an image layer
 .env
+.env.*
+!.env.example
+
+# Version control and caches
+.git/
+.gitignore
 __pycache__/
-*.csv
-*.csv
-output.txt
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+.vscode/
 .DS_Store
+
+# The frontend is built from its own context (./frontend)
 frontend/
+
+# Datasets — 74 MB+ of training data the API never reads at runtime
+**/*.csv
+archive/
+*.zip
+
+# Docs, lessons and sample text: not needed to serve requests
+docs/
 lessons/
 *.md
+!README.md
+# Sample resume/demo text files. The negation is required — a bare *.txt also
+# swallows requirements.txt, which breaks the build with "not found".
+*.txt
+!requirements.txt
+
+# Local artifacts
+*.db
+recruitment.db
+output.txt
+dist/
+build/

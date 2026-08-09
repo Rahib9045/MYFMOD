@@ -1,0 +1,28 @@
+# Production overrides. Layer on top of the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+#
+# Swaps both development servers for real ones. Set NEXT_PUBLIC_API_URL in .env
+# to the address browsers will actually use (not localhost) before building.
+
+services:
+  backend:
+    # 1 worker with threads, not multiple processes: the SBERT encoder is loaded
+    # once per worker (~500 MB), and forked workers would share the SQLAlchemy
+    # connection pool. Threads keep one copy of the model and one safe pool.
+    command:
+      - gunicorn
+      - --bind=0.0.0.0:5000
+      - --workers=1
+      - --threads=8
+      - --timeout=180
+      - --access-logfile=-
+      - app:app
+
+  frontend:
+    build:
+      context: ./frontend
+      target: production
+      args:
+        # Inlined into the client bundle at build time — a runtime env var
+        # cannot change it after the image is built.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
