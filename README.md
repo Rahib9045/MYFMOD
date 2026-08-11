@@ -129,18 +129,15 @@ you're in the wrong folder — `cd` again.
 
 ---
 
-## Part 5 — Get a free Groq API key
+## Part 5 — Have your Groq API key ready
 
-Groq is the AI service that reads the resumes. It's free to sign up.
+Groq is the AI service that reads the resumes. **Use your own key** — you'll paste it into the
+`.env` file in the next step. It starts with `gsk_`.
 
-1. Go to **https://console.groq.com** and create an account.
-2. Click **API Keys** in the sidebar → **Create API Key**.
-3. Give it any name, then copy the key. It starts with `gsk_`.
-4. 🚨 **Paste it into Notepad for a second — the website only shows it once.** If you lose it,
-   just delete that key and make a new one.
+Don't have it to hand? Get it from **https://console.groq.com** → **API Keys** in the sidebar.
+It's free. If you create a new one, copy it immediately — the site only shows it once.
 
-> **Get your own key. Don't reuse someone else's** — usage is billed to whoever owns it, and if it
-> leaks it has to be replaced. There is no key stored in this project.
+> No key is stored in this project, so you have to supply your own.
 
 ---
 
