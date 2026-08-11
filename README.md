@@ -15,11 +15,11 @@ evaluation the system produces.
 - [Setup From Scratch](#-setup-from-scratch) ← **start here**
 - [Running it again later](#-running-it-again-later)
 - [Running with Docker](#-running-with-docker-optional)
-- [Architecture](#️-architecture)
-- [Configuration reference](#️-configuration-reference)
+- [Architecture](#-architecture)
+- [Configuration reference](#-configuration-reference)
 - [API reference](#-api-reference)
 - [Project structure](#-project-structure)
-- [Database](#️-database)
+- [Database](#-database)
 - [Troubleshooting](#-troubleshooting)
 - [The local model](#-the-local-model)
 - [Educational docs](#-educational-journey-lessons--docs)
@@ -244,6 +244,9 @@ npm run dev
 
 **Leave this terminal open too.** You now have two terminals running. That's correct.
 
+> There is no config file to create for the frontend. It automatically talks to the backend on
+> `localhost:5000`.
+
 ---
 
 ## Part 9 — Use it
@@ -260,6 +263,24 @@ npm run dev
    browser.
 
 🎉 That's it. It works.
+
+### Did it actually work? Check these four things
+
+If anything below is wrong, find the matching row in [Troubleshooting](#-troubleshooting).
+
+1. **Terminal 1 says `Groq engine: ENABLED`.** If it says `DISABLED`, the app still runs but uses
+   the weaker offline model — your `.env` isn't being read.
+2. **http://localhost:5000/health returns JSON** that looks like
+   `{"status":"ok","engine":"groq-llama-3.3-70b-versatile","threshold":0.2}`. Paste that URL into
+   your browser. If nothing loads, Terminal 1 isn't running.
+3. **A real analysis comes back.** A good match should score high, and a deliberate mismatch
+   should score near zero. Try shuffling to a nonsense pairing — a chef's resume against a machine
+   learning job should come back **REJECT** with "Resume does not match the core job category."
+4. **Your data survives a refresh.** Save a portfolio, press F5. If it disappears, the backend
+   isn't storing it.
+
+> This walkthrough was tested by cloning the repository fresh and following it start to finish, so
+> the steps and the expected output above are what you should actually see.
 
 ---
 
@@ -358,8 +379,9 @@ All backend settings live in `.env` (template: `.env.example`).
 | `CORS_ORIGINS` | `http://localhost:3000` | Comma-separated origins allowed to call the API. |
 | `DEMO_JITTER` | `0` | Set to `1` to add ±2% random noise to every score. Off by default so a saved result is reproducible. |
 
-The frontend reads `NEXT_PUBLIC_API_URL` from `frontend/.env.local` (defaults to
-`http://localhost:5000`).
+**The frontend needs no config file.** It reads `NEXT_PUBLIC_API_URL` if set, and otherwise falls
+back to `http://localhost:5000`, which is correct for local use. A fresh clone has no
+`frontend/.env.local` and doesn't need one — only create it if your backend runs somewhere else.
 
 > `BRAIN_INIT_TOKEN` from earlier versions is still accepted as a fallback name for
 > `GROQ_API_KEY`, so old `.env` files keep working.
