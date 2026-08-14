@@ -294,6 +294,9 @@ is verified and no email is sent. Passwords must be at least 8 characters.
 4. Click **Get AI feedback** for a written verdict on that specific vacancy.
 5. Add an optional note and **Apply**. It appears under **My Applications**, where you can track
    the recruiter's decision.
+6. **CV Analysis** in the top nav works on *any* job description — including one you found
+   somewhere else entirely. Paste it in and you get a shortlist likelihood plus specific advice on
+   improving your CV for that role. Every analysis is saved so you can reopen it later.
 
 🎉 That's it. It works.
 
@@ -455,8 +458,15 @@ All routes except `/auth/register`, `/auth/login`, and `/health` require an
 | `GET` | `/auth/me` | Current user, including role |
 | `GET` | `/jobs` | Browse every open vacancy |
 | `GET` | `/jobs/<id>` | One vacancy |
+| `POST` | `/predict` | Analyse one CV against one pasted job description; saved to history |
+| `GET` | `/analyses` | Your analysis history (`?limit=N`, max 200) |
+| `GET` `DELETE` | `/analyses/<id>` | Full record / delete |
 | `POST` | `/upload_pdf` | Extract text from a PDF (10 MB max) |
 | `GET` | `/health` | Status and active engine |
+
+`/predict` serves both roles because the mechanics are identical — a recruiter is screening a
+candidate, a seeker is checking their own CV against a posting. Seekers may omit `resume` and it
+falls back to their saved CV. Histories are per-account and invisible to everyone else.
 
 **Recruiter only** — anything else gets `403`
 
@@ -467,11 +477,8 @@ All routes except `/auth/register`, `/auth/login`, and `/health` require an
 | `PUT` `DELETE` | `/jobs/<id>` | Edit (re-embeds) / delete. `status`: `open` \| `closed` |
 | `GET` | `/jobs/<id>/applications` | Applicants, best match first, with CV and contact |
 | `PATCH` | `/applications/<id>` | Set status: `submitted` \| `reviewed` \| `shortlisted` \| `rejected` |
-| `POST` | `/predict` | Manual screening; the result is saved |
 | `GET` `POST` | `/portfolios` | List / create saved candidate profiles |
 | `GET` `PUT` `DELETE` | `/portfolios/<id>` | Read / update / delete one |
-| `GET` | `/analyses` | Screening history (`?limit=N`, max 200) |
-| `GET` `DELETE` | `/analyses/<id>` | Full record / delete |
 
 **Job seeker only** — anything else gets `403`
 
@@ -528,7 +535,7 @@ curl -s -X POST http://localhost:5000/predict \
 │   ├── src/app/login/      # Sign in (redirects by role)
 │   ├── src/app/register/   # Sign up with role picker
 │   ├── src/app/recruiter/  # Post vacancies, review applicants
-│   ├── src/app/seeker/     # CV upload, ranked matches, applications
+│   ├── src/app/seeker/     # CV upload, ranked matches, CV analysis, applications
 │   ├── src/app/dashboard/  # Manual screening (recruiter only)
 │   └── public/verified_templates.json   # Sample candidates for "Randomize Case"
 ├── docs/                   # Lessons, guides, final report

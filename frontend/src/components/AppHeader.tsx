@@ -13,6 +13,7 @@ const NAV: Record<string, { href: string; label: string }[]> = {
   ],
   seeker: [
     { href: "/seeker", label: "Find Jobs" },
+    { href: "/seeker/analyze", label: "CV Analysis" },
     { href: "/seeker/applications", label: "My Applications" },
   ],
 };

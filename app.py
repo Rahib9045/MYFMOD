@@ -739,7 +739,7 @@ def delete_portfolio(portfolio_id: int):
 
 
 @app.route("/analyses", methods=["GET"])
-@require_role(ROLE_RECRUITER)
+@require_role(ROLE_RECRUITER, ROLE_SEEKER)
 def list_analyses():
     limit = min(int(request.args.get("limit", 50)), 200)
     with get_session() as session:
@@ -753,7 +753,7 @@ def list_analyses():
 
 
 @app.route("/analyses/<int:analysis_id>", methods=["GET"])
-@require_role(ROLE_RECRUITER)
+@require_role(ROLE_RECRUITER, ROLE_SEEKER)
 def get_analysis(analysis_id: int):
     with get_session() as session:
         analysis = session.get(Analysis, analysis_id)
@@ -763,7 +763,7 @@ def get_analysis(analysis_id: int):
 
 
 @app.route("/analyses/<int:analysis_id>", methods=["DELETE"])
-@require_role(ROLE_RECRUITER)
+@require_role(ROLE_RECRUITER, ROLE_SEEKER)
 def delete_analysis(analysis_id: int):
     with get_session() as session:
         analysis = session.get(Analysis, analysis_id)
@@ -775,16 +775,27 @@ def delete_analysis(analysis_id: int):
 
 
 @app.route("/predict", methods=["POST"])
-@require_role(ROLE_RECRUITER)
+@require_role(ROLE_RECRUITER, ROLE_SEEKER)
 def predict():
+    """Score one CV against one pasted job description.
+
+    Open to both roles: a recruiter is screening a candidate, a seeker is
+    checking their own CV against a posting they found elsewhere. Same
+    mechanics, and the seeker gets the improvement advice out of it.
+    """
     data = request.get_json(silent=True) or {}
     resume = data.get("resume", "")
     transcript = data.get("transcript", "")
     job_desc = data.get("job_description", "")
     portfolio_id = data.get("portfolio_id")
 
+    # A seeker analysing their own CV shouldn't have to paste it every time.
+    if not resume.strip() and g.user_role == ROLE_SEEKER:
+        with get_session() as session:
+            resume = (session.get(User, g.user_id).cv_text or "")
+
     if not resume.strip() or not job_desc.strip():
-        return jsonify({"error": "A resume and a job description are both required."}), 400
+        return jsonify({"error": "A CV and a job description are both required."}), 400
 
     result, engine = evaluate(resume, transcript, job_desc)
 
