@@ -77,6 +77,41 @@ def require_auth(view):
     return wrapper
 
 
+def require_role(*roles: str):
+    """Like require_auth, but also checks the account's role.
+
+    Sets g.user_id and g.user_role. Returns 403 (not 404) on a role mismatch:
+    the caller is authenticated, they just used the wrong kind of account.
+    """
+
+    def decorator(view):
+        @wraps(view)
+        def wrapper(*args, **kwargs):
+            user_id = _user_id_from_request()
+            if user_id is None:
+                return jsonify({"error": "Authentication required"}), 401
+
+            # Imported here so this module stays importable on its own.
+            from db import get_session
+            from models import User
+
+            with get_session() as session:
+                user = session.get(User, user_id)
+                if not user:
+                    return jsonify({"error": "Account no longer exists."}), 401
+                if user.role not in roles:
+                    wanted = " or ".join(roles)
+                    return jsonify({"error": f"This requires a {wanted} account."}), 403
+                g.user_id = user_id
+                g.user_role = user.role
+
+            return view(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def validate_credentials(email: str, password: str, name: str | None = None) -> str | None:
     """Return an error message for bad signup input, or None if it all checks out."""
     if not email or "@" not in email or "." not in email.split("@")[-1]:

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Lock, Mail, Loader2, BrainCircuit, AlertCircle } from "lucide-react";
-import { login } from "@/lib/api";
+import { login, homeFor } from "@/lib/api";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -19,8 +19,9 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      await login(email, password);
-      router.push("/dashboard");
+      const user = await login(email, password);
+      // Each role has its own portal.
+      router.push(homeFor(user));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed.");
       setLoading(false);

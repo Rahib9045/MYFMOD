@@ -1,18 +1,24 @@
 """
 app.py — AI Recruitment Intelligence API.
 
-Two evaluation paths:
-  1. Groq (llama-3.3-70b-versatile) — used when GROQ_API_KEY is set.
-  2. Local SBERT + MLP (recruitment_model.pth) — the trained fallback.
+Two portals share one API:
+  RECRUITER — post vacancies, review applicants, screen candidates by hand
+  SEEKER    — upload a CV, get ranked matching vacancies, apply
 
-Every verdict is persisted against the signed-in user, so accounts keep their
-saved portfolios and their analysis history.
+Two evaluation engines:
+  1. Local SBERT + MLP (recruitment_model.pth) — ranks one CV against every
+     open vacancy in a single batch. Fast enough to score hundreds of jobs.
+  2. Groq (llama-3.3-70b-versatile) — the deep write-up for a single pairing.
+
+Ranking many jobs is a batch problem, so it uses the local model; a detailed
+verdict on one job is a reasoning problem, so it uses Groq.
 """
 
 import json
 import os
 import random
 
+import numpy as np
 import torch
 from dotenv import load_dotenv
 from flask import Flask, g, jsonify, request
@@ -21,17 +27,31 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 
 import PyPDF2
 from auth import (
     create_token,
     hash_password,
     require_auth,
+    require_role,
     validate_credentials,
     verify_password,
 )
 from db import get_session, init_db
-from models import Analysis, Portfolio, User
+from models import (
+    APPLICATION_STATUSES,
+    JOB_CLOSED,
+    JOB_OPEN,
+    ROLE_RECRUITER,
+    ROLE_SEEKER,
+    VALID_ROLES,
+    Analysis,
+    Application,
+    Job,
+    Portfolio,
+    User,
+)
 from preprocess_data import clean_text
 from retrain_v2 import RecruitmentBrain
 
@@ -42,9 +62,9 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY") or os.getenv("BRAIN_INIT_TOKEN")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 # Random noise on the score. Off by default: analyses are now stored as a
 # record, and jitter makes the same input produce a different saved verdict.
-# Set DEMO_JITTER=1 to restore the old demo behaviour.
 DEMO_JITTER = os.getenv("DEMO_JITTER", "0") == "1"
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+EMBED_DIM = 384
 # ─────────────────────────────────────────────────────────────────────────────
 
 app = Flask(__name__)
@@ -65,7 +85,6 @@ DECISION_THRESHOLD = 0.5  # overridden by the threshold saved in the checkpoint
 
 if os.path.exists("recruitment_model.pth"):
     checkpoint = torch.load("recruitment_model.pth", map_location="cpu")
-    # Support both old-style (plain state_dict) and new-style (dict with threshold)
     if isinstance(checkpoint, dict) and "model_state" in checkpoint:
         brain.load_state_dict(checkpoint["model_state"])
         DECISION_THRESHOLD = checkpoint.get("threshold", 0.5)
@@ -78,6 +97,76 @@ else:
     print("⚠️ WARNING: No model weights found. Local predictions will be random!")
 
 print(f"🤖 Groq engine: {'ENABLED (' + GROQ_MODEL + ')' if _groq_client else 'DISABLED — using local MLP'}")
+
+
+# ─── EMBEDDING HELPERS ───────────────────────────────────────────────────────
+def encode(texts: list[str]) -> np.ndarray:
+    """SBERT-encode a batch of texts to float32 vectors."""
+    return model_sbert.encode(texts, convert_to_numpy=True, batch_size=32).astype(np.float32)
+
+
+def compute_job_embedding(job: Job) -> bytes:
+    """Encode a vacancy and return raw bytes for the cached column."""
+    return encode([clean_text(job.match_text())])[0].tobytes()
+
+
+def decode_embedding(raw: bytes) -> np.ndarray:
+    return np.frombuffer(raw, dtype=np.float32)
+
+
+def rank_jobs_for_cv(cv_text: str, jobs: list[Job]) -> list[dict]:
+    """Score one CV against many vacancies in a single batched pass.
+
+    Returns two independent numbers per job:
+
+      relevance — raw cosine similarity between the CV and job embeddings:
+                  "is this the same kind of work?" This drives the ranking.
+      fit       — the trained MLP's selection probability: "would this
+                  candidate be picked for it?" Advisory only.
+
+    Ranking deliberately uses relevance alone. The MLP was trained on the
+    Kaggle resume/transcript-vs-prose-job-description distribution, and a short
+    CV against a short structured vacancy is out of distribution for it — in
+    practice it returns near-zero for every job, including obviously good
+    matches, so blending it in only compresses the scale without reordering
+    anything. It is still returned so the UI can show it and so the gap stays
+    visible rather than hidden inside a combined number.
+
+    Cosine is used raw rather than rescaled from [-1, 1] to [0, 1]. Sentence
+    embeddings are rarely negative, so that rescale just squashes everything
+    into the top half and makes an unrelated job look like a 0.6 match.
+    """
+    if not jobs:
+        return []
+
+    cv_vec = encode([clean_text(cv_text)])[0]
+
+    job_matrix = np.stack([decode_embedding(job.embedding) for job in jobs])
+    cv_matrix = np.tile(cv_vec, (len(jobs), 1))
+
+    cv_norm = np.linalg.norm(cv_vec) or 1.0
+    job_norms = np.linalg.norm(job_matrix, axis=1)
+    job_norms[job_norms == 0] = 1.0
+    relevance = np.clip((job_matrix @ cv_vec) / (job_norms * cv_norm), 0.0, 1.0)
+
+    # The MLP expects the same concatenation order used in training.
+    with torch.no_grad():
+        features = torch.from_numpy(np.hstack([cv_matrix, job_matrix]))
+        fit = brain.predict_proba(features).squeeze(-1).numpy()
+
+    results = []
+    for i, job in enumerate(jobs):
+        results.append(
+            {
+                "job": job,
+                "relevance": round(float(relevance[i]), 4),
+                "fit": round(float(fit[i]), 4),
+                "match_score": round(float(relevance[i]), 4),
+            }
+        )
+
+    results.sort(key=lambda r: r["match_score"], reverse=True)
+    return results
 
 
 # ─── EVALUATION ENGINES ──────────────────────────────────────────────────────
@@ -159,6 +248,15 @@ def local_analysis(resume: str, transcript: str, job_desc: str) -> dict:
     }
 
 
+def evaluate(resume: str, transcript: str, job_desc: str) -> tuple[dict, str]:
+    """Run the best available engine. Returns (result, engine_name)."""
+    if _groq_client:
+        result = groq_analysis(resume, transcript, job_desc)
+        if result is not None:
+            return result, f"groq-{GROQ_MODEL}"
+    return local_analysis(resume, transcript, job_desc), "local-mlp"
+
+
 # ─── AUTH ROUTES ─────────────────────────────────────────────────────────────
 @app.route("/auth/register", methods=["POST"])
 def register():
@@ -166,21 +264,30 @@ def register():
     name = (data.get("name") or "").strip()
     email = (data.get("email") or "").strip().lower()
     password = data.get("password") or ""
+    role = (data.get("role") or ROLE_RECRUITER).strip().lower()
+    company = (data.get("company") or "").strip()
 
     error = validate_credentials(email, password, name)
     if error:
         return jsonify({"error": error}), 400
+    if role not in VALID_ROLES:
+        return jsonify({"error": f"Role must be one of: {', '.join(VALID_ROLES)}."}), 400
 
     with get_session() as session:
         if session.scalar(select(User).where(User.email == email)):
             return jsonify({"error": "An account with that email already exists."}), 409
 
-        user = User(email=email, name=name, password_hash=hash_password(password))
+        user = User(
+            email=email,
+            name=name,
+            password_hash=hash_password(password),
+            role=role,
+            company=company if role == ROLE_RECRUITER else "",
+        )
         session.add(user)
         try:
             session.commit()
         except IntegrityError:
-            # Lost a race with a concurrent signup for the same email.
             session.rollback()
             return jsonify({"error": "An account with that email already exists."}), 409
 
@@ -212,9 +319,353 @@ def me():
         return jsonify({"user": user.to_dict()})
 
 
-# ─── PORTFOLIO ROUTES ────────────────────────────────────────────────────────
-@app.route("/portfolios", methods=["GET"])
+# ─── RECRUITER: JOB POSTING ──────────────────────────────────────────────────
+_JOB_TEXT_FIELDS = (
+    "title",
+    "company",
+    "location",
+    "employment_type",
+    "description",
+    "requirements",
+    "skills",
+    "experience_level",
+    "salary_range",
+)
+
+
+def _job_payload(data: dict) -> dict:
+    """Normalize an incoming job body. `skills` accepts a list or a string."""
+    payload = {}
+    for field in _JOB_TEXT_FIELDS:
+        if field not in data:
+            continue
+        value = data[field]
+        if field == "skills" and isinstance(value, list):
+            value = ", ".join(str(s).strip() for s in value if str(s).strip())
+        payload[field] = str(value or "").strip()
+    return payload
+
+
+@app.route("/jobs", methods=["POST"])
+@require_role(ROLE_RECRUITER)
+def create_job():
+    data = request.get_json(silent=True) or {}
+    payload = _job_payload(data)
+
+    if not payload.get("title"):
+        return jsonify({"error": "A job title is required."}), 400
+    if not payload.get("description") and not payload.get("requirements"):
+        return jsonify({"error": "Add a description or a list of requirements."}), 400
+
+    with get_session() as session:
+        recruiter = session.get(User, g.user_id)
+        job = Job(recruiter_id=g.user_id, **payload)
+        # Fall back to the recruiter's own company name if they left it blank.
+        if not job.company:
+            job.company = recruiter.company or ""
+        job.embedding = compute_job_embedding(job)
+        session.add(job)
+        session.commit()
+        return jsonify({"job": job.to_dict(include_counts=True)}), 201
+
+
+@app.route("/jobs/mine", methods=["GET"])
+@require_role(ROLE_RECRUITER)
+def my_jobs():
+    with get_session() as session:
+        jobs = session.scalars(
+            select(Job)
+            .where(Job.recruiter_id == g.user_id)
+            .options(selectinload(Job.applications))
+            .order_by(Job.created_at.desc())
+        ).all()
+        return jsonify({"jobs": [j.to_dict(include_counts=True) for j in jobs]})
+
+
+@app.route("/jobs", methods=["GET"])
 @require_auth
+def browse_jobs():
+    """Every open vacancy. Both roles can browse."""
+    with get_session() as session:
+        jobs = session.scalars(
+            select(Job).where(Job.status == JOB_OPEN).order_by(Job.created_at.desc())
+        ).all()
+        return jsonify({"jobs": [j.to_dict() for j in jobs]})
+
+
+@app.route("/jobs/<int:job_id>", methods=["GET"])
+@require_auth
+def get_job(job_id: int):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+        if not job:
+            return jsonify({"error": "Job not found."}), 404
+        return jsonify({"job": job.to_dict(include_counts=True)})
+
+
+@app.route("/jobs/<int:job_id>", methods=["PUT"])
+@require_role(ROLE_RECRUITER)
+def update_job(job_id: int):
+    data = request.get_json(silent=True) or {}
+    with get_session() as session:
+        job = session.get(Job, job_id)
+        if not job or job.recruiter_id != g.user_id:
+            return jsonify({"error": "Job not found."}), 404
+
+        payload = _job_payload(data)
+        for field, value in payload.items():
+            setattr(job, field, value)
+
+        if "status" in data:
+            status = str(data["status"]).lower()
+            if status not in (JOB_OPEN, JOB_CLOSED):
+                return jsonify({"error": f"Status must be {JOB_OPEN} or {JOB_CLOSED}."}), 400
+            job.status = status
+
+        if not job.title.strip():
+            return jsonify({"error": "A job title is required."}), 400
+
+        # Any text change invalidates the cached embedding.
+        if payload:
+            job.embedding = compute_job_embedding(job)
+
+        session.commit()
+        return jsonify({"job": job.to_dict(include_counts=True)})
+
+
+@app.route("/jobs/<int:job_id>", methods=["DELETE"])
+@require_role(ROLE_RECRUITER)
+def delete_job(job_id: int):
+    with get_session() as session:
+        job = session.get(Job, job_id)
+        if not job or job.recruiter_id != g.user_id:
+            return jsonify({"error": "Job not found."}), 404
+        session.delete(job)
+        session.commit()
+        return jsonify({"deleted": job_id})
+
+
+@app.route("/jobs/<int:job_id>/applications", methods=["GET"])
+@require_role(ROLE_RECRUITER)
+def job_applications(job_id: int):
+    """Applicants for one of my vacancies, best match first."""
+    with get_session() as session:
+        job = session.get(Job, job_id)
+        if not job or job.recruiter_id != g.user_id:
+            return jsonify({"error": "Job not found."}), 404
+
+        applications = session.scalars(
+            select(Application)
+            .where(Application.job_id == job_id)
+            .options(selectinload(Application.seeker))
+            .order_by(Application.match_score.desc())
+        ).all()
+
+        return jsonify(
+            {
+                "job": job.to_dict(),
+                "applications": [a.to_dict(include_cv=True) for a in applications],
+            }
+        )
+
+
+@app.route("/applications/<int:application_id>", methods=["PATCH"])
+@require_role(ROLE_RECRUITER)
+def update_application_status(application_id: int):
+    data = request.get_json(silent=True) or {}
+    status = str(data.get("status", "")).lower()
+    if status not in APPLICATION_STATUSES:
+        return jsonify({"error": f"Status must be one of: {', '.join(APPLICATION_STATUSES)}."}), 400
+
+    with get_session() as session:
+        application = session.get(Application, application_id)
+        # Only the recruiter who owns the vacancy may move an applicant along.
+        if not application or application.job.recruiter_id != g.user_id:
+            return jsonify({"error": "Application not found."}), 404
+
+        application.status = status
+        session.commit()
+        return jsonify({"application": application.to_dict(include_cv=True)})
+
+
+# ─── SEEKER: CV, MATCHING, APPLYING ──────────────────────────────────────────
+@app.route("/cv", methods=["GET"])
+@require_role(ROLE_SEEKER)
+def get_cv():
+    with get_session() as session:
+        user = session.get(User, g.user_id)
+        return jsonify({"cv_text": user.cv_text or "", "cv_filename": user.cv_filename or ""})
+
+
+@app.route("/cv", methods=["PUT"])
+@require_role(ROLE_SEEKER)
+def save_cv():
+    data = request.get_json(silent=True) or {}
+    cv_text = (data.get("cv_text") or "").strip()
+    if not cv_text:
+        return jsonify({"error": "CV text is empty."}), 400
+
+    with get_session() as session:
+        user = session.get(User, g.user_id)
+        user.cv_text = cv_text
+        user.cv_filename = (data.get("cv_filename") or user.cv_filename or "").strip()
+        session.commit()
+        return jsonify({"saved": True, "user": user.to_dict()})
+
+
+@app.route("/match", methods=["POST"])
+@require_role(ROLE_SEEKER)
+def match_jobs():
+    """Rank every open vacancy against the seeker's CV."""
+    data = request.get_json(silent=True) or {}
+    limit = min(int(data.get("limit", 20)), 100)
+
+    with get_session() as session:
+        user = session.get(User, g.user_id)
+        cv_text = (data.get("cv_text") or user.cv_text or "").strip()
+        if not cv_text:
+            return jsonify({"error": "Upload or paste a CV first."}), 400
+
+        # Persist the CV so the seeker doesn't have to re-upload next visit.
+        if data.get("save_cv") and data.get("cv_text"):
+            user.cv_text = cv_text
+            if data.get("cv_filename"):
+                user.cv_filename = data["cv_filename"]
+
+        jobs = session.scalars(select(Job).where(Job.status == JOB_OPEN)).all()
+        if not jobs:
+            session.commit()
+            return jsonify({"matches": [], "total_open_jobs": 0})
+
+        # Backfill any vacancy missing a cached embedding (e.g. rows created
+        # before caching existed, or a failed earlier write).
+        stale = [j for j in jobs if not j.embedding or len(j.embedding) != EMBED_DIM * 4]
+        if stale:
+            vectors = encode([clean_text(j.match_text()) for j in stale])
+            for job, vector in zip(stale, vectors):
+                job.embedding = vector.tobytes()
+            print(f"🔧 Backfilled embeddings for {len(stale)} job(s)")
+
+        ranked = rank_jobs_for_cv(cv_text, jobs)
+
+        # Mark the ones already applied to, so the UI can disable the button.
+        applied_ids = set(
+            session.scalars(
+                select(Application.job_id).where(Application.seeker_id == g.user_id)
+            ).all()
+        )
+
+        session.commit()
+
+        matches = []
+        for entry in ranked[:limit]:
+            job = entry["job"]
+            matches.append(
+                {
+                    **job.to_dict(),
+                    "match_score": entry["match_score"],
+                    "relevance": entry["relevance"],
+                    "fit": entry["fit"],
+                    "already_applied": job.id in applied_ids,
+                }
+            )
+
+        return jsonify({"matches": matches, "total_open_jobs": len(jobs)})
+
+
+@app.route("/jobs/<int:job_id>/analyze", methods=["POST"])
+@require_role(ROLE_SEEKER)
+def analyze_against_job(job_id: int):
+    """Groq deep-dive: how does my CV stack up against this one vacancy?"""
+    data = request.get_json(silent=True) or {}
+
+    with get_session() as session:
+        job = session.get(Job, job_id)
+        if not job or job.status != JOB_OPEN:
+            return jsonify({"error": "Job not found."}), 404
+
+        user = session.get(User, g.user_id)
+        cv_text = (data.get("cv_text") or user.cv_text or "").strip()
+        if not cv_text:
+            return jsonify({"error": "Upload or paste a CV first."}), 400
+
+        job_text = f"{job.title}\n{job.description}\n\nRequirements:\n{job.requirements}\n\nSkills: {job.skills}"
+
+    result, engine = evaluate(cv_text, "", job_text)
+    return jsonify(
+        {
+            "job_id": job_id,
+            "probability": round(result["probability"] * 100, 2),
+            "decision": result["decision"],
+            "advice": result["advice"],
+            "engine": engine,
+        }
+    )
+
+
+@app.route("/jobs/<int:job_id>/apply", methods=["POST"])
+@require_role(ROLE_SEEKER)
+def apply_to_job(job_id: int):
+    data = request.get_json(silent=True) or {}
+
+    with get_session() as session:
+        job = session.get(Job, job_id)
+        if not job:
+            return jsonify({"error": "Job not found."}), 404
+        if job.status != JOB_OPEN:
+            return jsonify({"error": "This vacancy is closed."}), 400
+
+        user = session.get(User, g.user_id)
+        cv_text = (data.get("cv_text") or user.cv_text or "").strip()
+        if not cv_text:
+            return jsonify({"error": "Upload or paste a CV before applying."}), 400
+
+        if session.scalar(
+            select(Application).where(
+                Application.job_id == job_id, Application.seeker_id == g.user_id
+            )
+        ):
+            return jsonify({"error": "You have already applied to this vacancy."}), 409
+
+        if not job.embedding:
+            job.embedding = compute_job_embedding(job)
+
+        score = rank_jobs_for_cv(cv_text, [job])[0]["match_score"]
+
+        application = Application(
+            job_id=job_id,
+            seeker_id=g.user_id,
+            cv_text=cv_text,
+            cover_note=(data.get("cover_note") or "").strip(),
+            match_score=score,
+        )
+        session.add(application)
+        try:
+            session.commit()
+        except IntegrityError:
+            # Lost a race with a double-submit.
+            session.rollback()
+            return jsonify({"error": "You have already applied to this vacancy."}), 409
+
+        return jsonify({"application": application.to_dict(include_job=True)}), 201
+
+
+@app.route("/applications/mine", methods=["GET"])
+@require_role(ROLE_SEEKER)
+def my_applications():
+    with get_session() as session:
+        applications = session.scalars(
+            select(Application)
+            .where(Application.seeker_id == g.user_id)
+            .options(selectinload(Application.job))
+            .order_by(Application.created_at.desc())
+        ).all()
+        return jsonify({"applications": [a.to_dict(include_job=True) for a in applications]})
+
+
+# ─── RECRUITER: MANUAL SCREENING (portfolios + analyses) ─────────────────────
+@app.route("/portfolios", methods=["GET"])
+@require_role(ROLE_RECRUITER)
 def list_portfolios():
     with get_session() as session:
         rows = session.scalars(
@@ -226,7 +677,7 @@ def list_portfolios():
 
 
 @app.route("/portfolios", methods=["POST"])
-@require_auth
+@require_role(ROLE_RECRUITER)
 def create_portfolio():
     data = request.get_json(silent=True) or {}
     title = (data.get("title") or "").strip()
@@ -247,7 +698,7 @@ def create_portfolio():
 
 
 @app.route("/portfolios/<int:portfolio_id>", methods=["GET"])
-@require_auth
+@require_role(ROLE_RECRUITER)
 def get_portfolio(portfolio_id: int):
     with get_session() as session:
         portfolio = session.get(Portfolio, portfolio_id)
@@ -257,7 +708,7 @@ def get_portfolio(portfolio_id: int):
 
 
 @app.route("/portfolios/<int:portfolio_id>", methods=["PUT"])
-@require_auth
+@require_role(ROLE_RECRUITER)
 def update_portfolio(portfolio_id: int):
     data = request.get_json(silent=True) or {}
     with get_session() as session:
@@ -276,7 +727,7 @@ def update_portfolio(portfolio_id: int):
 
 
 @app.route("/portfolios/<int:portfolio_id>", methods=["DELETE"])
-@require_auth
+@require_role(ROLE_RECRUITER)
 def delete_portfolio(portfolio_id: int):
     with get_session() as session:
         portfolio = session.get(Portfolio, portfolio_id)
@@ -287,9 +738,8 @@ def delete_portfolio(portfolio_id: int):
         return jsonify({"deleted": portfolio_id})
 
 
-# ─── ANALYSIS HISTORY ROUTES ─────────────────────────────────────────────────
 @app.route("/analyses", methods=["GET"])
-@require_auth
+@require_role(ROLE_RECRUITER)
 def list_analyses():
     limit = min(int(request.args.get("limit", 50)), 200)
     with get_session() as session:
@@ -303,7 +753,7 @@ def list_analyses():
 
 
 @app.route("/analyses/<int:analysis_id>", methods=["GET"])
-@require_auth
+@require_role(ROLE_RECRUITER)
 def get_analysis(analysis_id: int):
     with get_session() as session:
         analysis = session.get(Analysis, analysis_id)
@@ -313,7 +763,7 @@ def get_analysis(analysis_id: int):
 
 
 @app.route("/analyses/<int:analysis_id>", methods=["DELETE"])
-@require_auth
+@require_role(ROLE_RECRUITER)
 def delete_analysis(analysis_id: int):
     with get_session() as session:
         analysis = session.get(Analysis, analysis_id)
@@ -324,9 +774,8 @@ def delete_analysis(analysis_id: int):
         return jsonify({"deleted": analysis_id})
 
 
-# ─── CORE PREDICTION ─────────────────────────────────────────────────────────
 @app.route("/predict", methods=["POST"])
-@require_auth
+@require_role(ROLE_RECRUITER)
 def predict():
     data = request.get_json(silent=True) or {}
     resume = data.get("resume", "")
@@ -337,17 +786,7 @@ def predict():
     if not resume.strip() or not job_desc.strip():
         return jsonify({"error": "A resume and a job description are both required."}), 400
 
-    result = None
-    engine = f"groq-{GROQ_MODEL}"
-
-    if _groq_client:
-        print(f"🤖 Evaluating via Groq ({GROQ_MODEL})...")
-        result = groq_analysis(resume, transcript, job_desc)
-
-    if result is None:
-        print("⚡ Falling back to the local SBERT + MLP model...")
-        result = local_analysis(resume, transcript, job_desc)
-        engine = "local-mlp"
+    result, engine = evaluate(resume, transcript, job_desc)
 
     probability = result["probability"]
     if DEMO_JITTER and 0 < probability < 1:
@@ -389,10 +828,11 @@ def predict():
     )
 
 
-# ─── PDF UPLOAD ──────────────────────────────────────────────────────────────
+# ─── SHARED ──────────────────────────────────────────────────────────────────
 @app.route("/upload_pdf", methods=["POST"])
 @require_auth
 def upload_pdf():
+    """Extract text from a PDF. Used for recruiter resumes and seeker CVs."""
     if "file" not in request.files:
         return jsonify({"error": "No file part"}), 400
     file = request.files["file"]
@@ -407,7 +847,10 @@ def upload_pdf():
     except Exception as exc:
         return jsonify({"error": f"Could not read that PDF: {type(exc).__name__}"}), 400
 
-    return jsonify({"text": text})
+    if not text.strip():
+        return jsonify({"error": "No text found — this PDF may be a scanned image."}), 400
+
+    return jsonify({"text": text, "filename": file.filename})
 
 
 @app.route("/health", methods=["GET"])

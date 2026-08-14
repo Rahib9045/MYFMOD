@@ -1,8 +1,11 @@
 # 🧠 AI Recruitment Intelligence System
 
-An HR screening tool that matches candidate resumes and interview transcripts against job
-descriptions. Users sign in, save candidate portfolios, and keep a permanent history of every
-evaluation the system produces.
+A two-sided recruitment platform. **Recruiters** post vacancies and review applicants ranked by
+CV match. **Job seekers** drop in a CV, get every open vacancy scored and ranked against it, and
+apply in one click. Recruiters also keep the original manual screening tool for evaluating a
+candidate against a pasted job description.
+
+You pick your role when you register, and each role gets its own portal.
 
 > **Setting this up for the first time?** Go straight to
 > [**Setup From Scratch**](#-setup-from-scratch) below. It assumes you have never run a project
@@ -248,16 +251,49 @@ npm run dev
 
 ## Part 9 — Use it
 
-1. Open your browser and go to **http://localhost:3000**
-2. You'll land on the sign-in page. Click **Register now**.
-3. Make an account. Any email works — it isn't verified and no email is sent. **The password must
-   be at least 8 characters.**
-4. You're now on the dashboard. Click **🎲 Randomize Case** to load a sample candidate and job.
-5. Click **Begin Deep Analysis**. After a few seconds you get a SELECT or REJECT verdict, a
-   confidence score, and written advice.
-6. Click **Save Portfolio**, type a name, press Enter. It appears in the **Saved Portfolios** list.
-7. Refresh the page. Everything is still there — it's saved in a real database, not just your
-   browser.
+### Quickest path: load the demo data
+
+With the backend running, open a third terminal in the project folder and run:
+
+```bash
+python seed_demo.py
+```
+
+That creates one recruiter, one job seeker with a CV, and five realistic vacancies, then prints
+the ranking so you can see the matcher working. Safe to re-run — it skips anything that already
+exists. Sign in at http://localhost:3000/login with:
+
+| Role | Email | Password |
+| :--- | :--- | :--- |
+| Recruiter | `recruiter@demo.com` | `demo12345` |
+| Job seeker | `seeker@demo.com` | `demo12345` |
+
+### Or do it by hand
+
+Open **http://localhost:3000**, click **Register now**, and pick a role. Any email works — nothing
+is verified and no email is sent. Passwords must be at least 8 characters.
+
+**As a recruiter:**
+
+1. You land on **Vacancies**. Click **Post a Vacancy**.
+2. Fill in the title, description, requirements and skills. All of those feed the matching model,
+   so the more specific they are, the better the ranking.
+3. Publish it. The vacancy is now scored against every job seeker's CV automatically.
+4. Click the **applicants** button on a vacancy to see who applied, ranked by CV match, with each
+   person's full CV and contact details.
+5. Move an applicant through **submitted → reviewed → shortlisted / rejected**. They see the
+   status change on their side.
+6. **Manual Screening** in the top nav is the original tool: paste a CV and a job description and
+   get a one-off verdict.
+
+**As a job seeker:**
+
+1. You land on **Find Jobs**. Upload your CV as a PDF, or paste the text.
+2. Click **Find Matching Jobs**. Every open vacancy is scored and ranked against your CV.
+3. Open a match to read the full posting and see the two scores behind it.
+4. Click **Get AI feedback** for a written verdict on that specific vacancy.
+5. Add an optional note and **Apply**. It appears under **My Applications**, where you can track
+   the recruiter's decision.
 
 🎉 That's it. It works.
 
@@ -350,16 +386,36 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
 
 | Layer | What it does |
 | :--- | :--- |
-| **Next.js frontend** | Sign-in, dashboard, saved portfolios, analysis history |
-| **Flask API** | Auth (JWT), portfolio CRUD, evaluation endpoints |
+| **Next.js frontend** | Role-aware portals: `/recruiter`, `/seeker`, `/dashboard` |
+| **Flask API** | Auth (JWT + roles), vacancies, CV matching, applications |
 | **Database** | SQLite by default (`DATABASE_URL` swaps in Postgres) |
-| **Groq LLM** | `llama-3.3-70b-versatile` — the primary evaluation engine |
-| **Local SBERT + MLP** | `recruitment_model.pth` — the trained fallback engine |
+| **SBERT + MLP** | Ranks one CV against every open vacancy, in one batch |
+| **Groq LLM** | `llama-3.3-70b-versatile` — the deep write-up on a single pairing |
 
-The API tries Groq first. If no `GROQ_API_KEY` is set, or the Groq call fails for any reason, it
-falls back to the locally trained model automatically. Every response reports which engine
-produced it in the `engine` field, and that value is stored alongside the result — so you can
-always tell how any given verdict was reached.
+### Which engine does what, and why
+
+Ranking a CV against *every* vacancy is a batch problem: SBERT encodes the CV once and scores
+hundreds of jobs in milliseconds, while Groq would need one API call per job. So **matching uses
+the local model**, and **Groq handles the detailed verdict** on one job at a time.
+
+Every match returns two independent numbers:
+
+- **relevance** — cosine similarity between the CV and the vacancy. "Is this the same kind of
+  work?" **This drives the ranking.**
+- **fit** — the trained MLP's selection probability. "Would this candidate be picked?"
+  **Advisory only.**
+
+> **An honest note on `fit`.** The MLP was trained on the Kaggle
+> resume-and-transcript-vs-prose-job-description distribution. A short CV against a short,
+> structured vacancy is out of distribution for it, and in practice it returns near-zero for
+> every job — including obviously good matches. Blending it into the ranking only compressed the
+> scale without reordering anything, so it is reported separately instead of being hidden inside
+> a combined score. If you want it to genuinely contribute, it needs retraining on
+> vacancy-shaped data.
+
+For the manual screening tool, the API tries Groq first and falls back to the local model if no
+`GROQ_API_KEY` is set or the call fails. Every response reports which engine produced it in the
+`engine` field, and that value is stored with the result.
 
 ---
 
@@ -390,20 +446,45 @@ back to `http://localhost:5000`, which is correct for local use. A fresh clone h
 All routes except `/auth/register`, `/auth/login`, and `/health` require an
 `Authorization: Bearer <token>` header.
 
+**Any signed-in account**
+
 | Method | Route | Purpose |
 | :--- | :--- | :--- |
-| `POST` | `/auth/register` | Create an account → `{token, user}` |
+| `POST` | `/auth/register` | Create an account (`role`: `recruiter` \| `seeker`) → `{token, user}` |
 | `POST` | `/auth/login` | Sign in → `{token, user}` |
-| `GET` | `/auth/me` | Current user |
-| `GET` `POST` | `/portfolios` | List / create saved candidate profiles |
-| `GET` `PUT` `DELETE` | `/portfolios/<id>` | Read / update / delete one |
-| `POST` | `/predict` | Evaluate a candidate; the result is saved automatically |
-| `GET` | `/analyses` | Analysis history, newest first (`?limit=N`, max 200) |
-| `GET` `DELETE` | `/analyses/<id>` | Full record (with inputs) / delete |
-| `POST` | `/upload_pdf` | Extract text from a resume PDF (10 MB max) |
+| `GET` | `/auth/me` | Current user, including role |
+| `GET` | `/jobs` | Browse every open vacancy |
+| `GET` | `/jobs/<id>` | One vacancy |
+| `POST` | `/upload_pdf` | Extract text from a PDF (10 MB max) |
 | `GET` | `/health` | Status and active engine |
 
-Portfolios and analyses are scoped to their owner — another account gets a `404`, not the data.
+**Recruiter only** — anything else gets `403`
+
+| Method | Route | Purpose |
+| :--- | :--- | :--- |
+| `POST` | `/jobs` | Post a vacancy (embedding computed on save) |
+| `GET` | `/jobs/mine` | My vacancies, with applicant counts |
+| `PUT` `DELETE` | `/jobs/<id>` | Edit (re-embeds) / delete. `status`: `open` \| `closed` |
+| `GET` | `/jobs/<id>/applications` | Applicants, best match first, with CV and contact |
+| `PATCH` | `/applications/<id>` | Set status: `submitted` \| `reviewed` \| `shortlisted` \| `rejected` |
+| `POST` | `/predict` | Manual screening; the result is saved |
+| `GET` `POST` | `/portfolios` | List / create saved candidate profiles |
+| `GET` `PUT` `DELETE` | `/portfolios/<id>` | Read / update / delete one |
+| `GET` | `/analyses` | Screening history (`?limit=N`, max 200) |
+| `GET` `DELETE` | `/analyses/<id>` | Full record / delete |
+
+**Job seeker only** — anything else gets `403`
+
+| Method | Route | Purpose |
+| :--- | :--- | :--- |
+| `GET` `PUT` | `/cv` | Read / save my CV |
+| `POST` | `/match` | Rank every open vacancy against my CV |
+| `POST` | `/jobs/<id>/analyze` | Groq write-up on how I fit one vacancy |
+| `POST` | `/jobs/<id>/apply` | Apply (one per vacancy; the match score is recorded) |
+| `GET` | `/applications/mine` | My applications and their status |
+
+Everything is scoped to its owner. Another recruiter asking for your vacancy's applicants gets a
+`404`, not the data — and using the wrong role gets a `403`.
 
 ### Example
 
@@ -427,10 +508,11 @@ curl -s -X POST http://localhost:5000/predict \
 
 ```
 .
-├── app.py                  # Flask API — auth, portfolios, analyses, prediction
-├── models.py               # SQLAlchemy tables: users, portfolios, analyses
-├── db.py                   # Engine + session setup
-├── auth.py                 # Password hashing, JWT, @require_auth guard
+├── app.py                  # Flask API — auth, vacancies, matching, applications
+├── models.py               # SQLAlchemy tables (5) + role/status constants
+├── db.py                   # Engine, session setup, additive column migrations
+├── auth.py                 # Password hashing, JWT, @require_auth / @require_role
+├── seed_demo.py            # Creates a demo recruiter, seeker and 5 vacancies
 ├── preprocess_data.py      # Text cleaning used at train and inference time
 ├── retrain_v2.py           # Training script + the RecruitmentBrain model class
 ├── recruitment_model.pth   # Trained weights (threshold baked in)
@@ -441,9 +523,13 @@ curl -s -X POST http://localhost:5000/predict \
 ├── Dockerfile              # Backend image
 ├── frontend/
 │   ├── src/lib/api.ts      # All API calls + token handling
-│   ├── src/app/login/      # Sign in
-│   ├── src/app/register/   # Sign up
-│   ├── src/app/dashboard/  # Main workspace
+│   ├── src/lib/useAuth.ts  # Session check + role guard hook
+│   ├── src/components/     # Shared role-aware header
+│   ├── src/app/login/      # Sign in (redirects by role)
+│   ├── src/app/register/   # Sign up with role picker
+│   ├── src/app/recruiter/  # Post vacancies, review applicants
+│   ├── src/app/seeker/     # CV upload, ranked matches, applications
+│   ├── src/app/dashboard/  # Manual screening (recruiter only)
 │   └── public/verified_templates.json   # Sample candidates for "Randomize Case"
 ├── docs/                   # Lessons, guides, final report
 └── archive/dataset.csv     # Training data (not tracked in git)
@@ -453,11 +539,19 @@ curl -s -X POST http://localhost:5000/predict \
 
 ## 🗄️ Database
 
-Three tables, created automatically on first boot (`models.py`):
+Five tables, created automatically on first boot (`models.py`):
 
-- **`users`** — email, name, hashed password
-- **`portfolios`** — a saved candidate profile (resume, transcript, job description)
-- **`analyses`** — every verdict: score, decision, advice, and which engine produced it
+- **`users`** — email, name, hashed password, role, company (recruiters), saved CV (seekers)
+- **`jobs`** — vacancies, plus a cached SBERT embedding so matching never re-encodes them
+- **`applications`** — one row per seeker per vacancy, with the CV snapshot and match score
+- **`portfolios`** — a recruiter's saved candidate profile
+- **`analyses`** — every manual-screening verdict and which engine produced it
+
+**Upgrading an existing database is automatic.** `create_all()` adds new tables but never alters
+existing ones, so `db.py` also patches in columns added later (`role`, `company`, `cv_text`,
+`cv_filename`). Accounts created before roles existed become **recruiters**, which preserves
+exactly what they could do before. You'll see `🔧 Schema updated: added users.role` on the first
+boot after upgrading.
 
 **To wipe everything and start fresh:**
 
@@ -490,6 +584,10 @@ DATABASE_URL=postgresql+psycopg://user:password@localhost/recruitment
 | "Cannot reach the API" in the browser | Terminal 1 isn't running. Check http://localhost:5000/health — it should return JSON. |
 | Website won't load at all | Terminal 2 isn't running, or something else is using port 3000. |
 | `Port 5000 is already in use` | Another program has the port (on Mac, AirPlay Receiver is a common culprit — turn it off in System Settings → General → AirDrop & Handoff). |
+| "This requires a recruiter account" (403) | You registered as the other role. Roles are fixed at registration — make a second account with the role you need. |
+| Job seeker sees no matches | No recruiter has posted a vacancy yet. Run `python seed_demo.py`, or post one from a recruiter account. |
+| Match scores look low across the board | Expected. The score is raw cosine similarity: ~70%+ is a strong match, ~30% or below is a different field. It is not a percentage-of-requirements-met. |
+| A vacancy edit didn't change the ranking | Only the text fields re-embed. Changing just `status` or `salary_range` deliberately leaves the embedding alone. |
 | Logged out unexpectedly | Token expired (7 days) or `JWT_SECRET` changed. Just sign in again. |
 | "Session expired" right after signing in | The backend restarted with a temporary `JWT_SECRET`. Set a fixed one in `.env`. |
 | `pip install` fails or seems stuck | It downloads ~2 GB. Give it 15 minutes on a slow connection before assuming it's broken. |

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileText,
@@ -9,7 +8,6 @@ import {
   Search,
   RefreshCcw,
   Upload,
-  LogOut,
   BrainCircuit,
   AlertCircle,
   Lightbulb,
@@ -21,9 +19,9 @@ import {
   Trash2,
   Loader2,
 } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
+import { useAuthGuard } from "@/lib/useAuth";
 import {
-  me,
-  logout,
   predict,
   uploadPdf,
   listPortfolios,
@@ -32,7 +30,6 @@ import {
   listAnalyses,
   getAnalysis,
   deleteAnalysis,
-  type User,
   type Portfolio,
   type Analysis,
   type PredictResult,
@@ -44,10 +41,9 @@ type Templates = {
 };
 
 export default function DashboardPage() {
-  const router = useRouter();
 
-  const [user, setUser] = useState<User | null>(null);
-  const [booting, setBooting] = useState(true);
+  // Manual screening is a recruiter tool; seekers get bounced to their own portal.
+  const { user, loading: booting } = useAuthGuard("recruiter");
 
   const [loading, setLoading] = useState(false);
   const [resume, setResume] = useState("");
@@ -76,20 +72,15 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
-    // Verify the token against the server rather than trusting localStorage.
-    me()
-      .then((u) => {
-        setUser(u);
-        setBooting(false);
-        refreshSaved();
-      })
-      .catch(() => router.push("/login"));
+    if (user) refreshSaved();
+  }, [user, refreshSaved]);
 
+  useEffect(() => {
     fetch("/verified_templates.json")
       .then((r) => r.json())
       .then((data) => setTemplates(data))
       .catch(() => undefined);
-  }, [router, refreshSaved]);
+  }, []);
 
   const randomizeApplicant = () => {
     if (templates.candidates.length === 0) return;
@@ -117,11 +108,6 @@ export default function DashboardPage() {
     randomizeApplicant();
     randomizeJob();
     setStatus("Case Randomized: Ready for Analysis");
-  };
-
-  const handleLogout = () => {
-    logout();
-    router.push("/login");
   };
 
   const analyze = async () => {
@@ -152,7 +138,7 @@ export default function DashboardPage() {
     setStatus(`Reading: ${file.name}...`);
     setError("");
     try {
-      const text = await uploadPdf(file);
+      const { text } = await uploadPdf(file);
       setResume(text);
       setStatus(`✅ ${file.name} Parsed Successfully`);
     } catch (err) {
@@ -246,29 +232,7 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      {/* Header */}
-      <header className="glass border-b border-white/5 py-4 px-8 flex justify-between items-center sticky top-0 z-50">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-orange-500/20 rounded-xl">
-            <BrainCircuit className="w-6 h-6 text-orange-400" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-white/90">
-            AI Recruitment <span className="text-orange-400">Intelligence</span>
-          </span>
-        </div>
-        <div className="flex items-center gap-6">
-          <span className="text-sm text-slate-400 hidden sm:block">
-            Signed in as <span className="text-slate-200 font-medium">{user?.name}</span>
-          </span>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors"
-          >
-            <LogOut className="w-5 h-5" />
-            <span className="text-sm font-medium">Logout</span>
-          </button>
-        </div>
-      </header>
+      <AppHeader user={user} />
 
       <main className="flex-1 p-8 max-w-7xl mx-auto w-full space-y-8">
         {error && (
